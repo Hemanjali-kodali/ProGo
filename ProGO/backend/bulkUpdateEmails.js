@@ -28,6 +28,14 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
 }
 
+function normalizePhone(phone) {
+  return String(phone || '').trim();
+}
+
+function isValidPhone(phone) {
+  return /^[+\d][\d\s()-]{6,19}$/.test(normalizePhone(phone));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const inputFile = args.file || 'email-updates.json';
@@ -56,6 +64,9 @@ async function main() {
       const registrationNumber = String(item.registrationNumber || '').trim().toUpperCase();
       const studentEmail = item.studentEmail ? String(item.studentEmail).trim().toLowerCase() : '';
       const parentEmail = item.parentEmail ? String(item.parentEmail).trim().toLowerCase() : '';
+      const studentPhone = item.studentPhone ? normalizePhone(item.studentPhone) : '';
+      const parentPhone = item.parentPhone ? normalizePhone(item.parentPhone) : '';
+      const parentAlternatePhone = item.parentAlternatePhone ? normalizePhone(item.parentAlternatePhone) : '';
 
       if (!registrationNumber) {
         results.push({ success: false, registrationNumber: null, error: 'Missing registrationNumber' });
@@ -72,8 +83,23 @@ async function main() {
         continue;
       }
 
-      if (!studentEmail && !parentEmail) {
-        results.push({ success: false, registrationNumber, error: 'No studentEmail or parentEmail provided' });
+      if (studentPhone && !isValidPhone(studentPhone)) {
+        results.push({ success: false, registrationNumber, error: 'Invalid studentPhone' });
+        continue;
+      }
+
+      if (parentPhone && !isValidPhone(parentPhone)) {
+        results.push({ success: false, registrationNumber, error: 'Invalid parentPhone' });
+        continue;
+      }
+
+      if (parentAlternatePhone && !isValidPhone(parentAlternatePhone)) {
+        results.push({ success: false, registrationNumber, error: 'Invalid parentAlternatePhone' });
+        continue;
+      }
+
+      if (!studentEmail && !parentEmail && !studentPhone && !parentPhone && !parentAlternatePhone) {
+        results.push({ success: false, registrationNumber, error: 'No contact fields provided' });
         continue;
       }
 
@@ -85,17 +111,36 @@ async function main() {
 
       if (studentEmail) {
         student.email = studentEmail;
+      }
+
+      if (studentPhone) {
+        student.phone = studentPhone;
+      }
+
+      if (studentEmail || studentPhone) {
         await student.save();
       }
 
-      if (parentEmail) {
+      if (parentEmail || parentPhone || parentAlternatePhone) {
         if (!student.parentId) {
           results.push({ success: false, registrationNumber, error: 'Linked parent not found' });
           continue;
         }
 
         const parent = await Parent.findById(student.parentId._id);
-        parent.email = parentEmail;
+
+        if (parentEmail) {
+          parent.email = parentEmail;
+        }
+
+        if (parentPhone) {
+          parent.phone = parentPhone;
+        }
+
+        if (parentAlternatePhone) {
+          parent.alternatePhone = parentAlternatePhone;
+        }
+
         await parent.save();
       }
 
@@ -104,7 +149,10 @@ async function main() {
         success: true,
         registrationNumber,
         studentEmail: refreshedStudent.email,
-        parentEmail: refreshedStudent.parentId?.email || null
+        studentPhone: refreshedStudent.phone || null,
+        parentEmail: refreshedStudent.parentId?.email || null,
+        parentPhone: refreshedStudent.parentId?.phone || null,
+        parentAlternatePhone: refreshedStudent.parentId?.alternatePhone || null
       });
     }
 

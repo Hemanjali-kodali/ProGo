@@ -57,6 +57,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/parent_st
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/chatbot', require('./routes/chatbot'));
+app.use('/api/whatsapp', require('./routes/whatsapp'));
 app.use('/api/student', require('./routes/student'));
 app.use('/api/admin', require('./routes/admin'));
 
@@ -77,7 +78,18 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
+  const missingWhatsAppKeys = [
+    'WHATSAPP_ACCESS_TOKEN',
+    'WHATSAPP_PHONE_NUMBER_ID',
+    'WHATSAPP_VERIFY_TOKEN'
+  ].filter((key) => !process.env[key]);
+
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`📚 Parent-Student Chatbot System`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}\n`);
+
+  if (missingWhatsAppKeys.length > 0) {
+    console.warn(`⚠ WhatsApp is not fully configured. Missing: ${missingWhatsAppKeys.join(', ')}`);
+    console.warn('⚠ Configure these env vars before verifying the Meta webhook or sending messages.');
+  }
 });

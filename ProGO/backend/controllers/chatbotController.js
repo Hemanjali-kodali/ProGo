@@ -12,6 +12,14 @@ const Notification = require('../models/Notification');
 const Faculty = require('../models/Faculty');
 const Subject = require('../models/Subject');
 
+const normalizePhoneNumber = (value) => {
+  if (!value) {
+    return '';
+  }
+
+  return String(value).replace(/\D/g, '');
+};
+
 class ChatbotController {
   constructor() {
     this.initialized = false;
@@ -43,8 +51,6 @@ class ChatbotController {
   try {
 
     const { message } = req.body;
-    const lower = message.toLowerCase().trim();
-
     const { studentId } = req.session;
     const sessionId = req.sessionID || req.session.id;
 
@@ -65,6 +71,32 @@ class ChatbotController {
       });
     }
 
+    const data = await this.processMessageForStudent({
+      message,
+      student,
+      sessionId
+    });
+
+    return res.json({
+      success: true,
+      data
+    });
+
+  } catch (error) {
+
+    console.error("Error processing message:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Error processing your request. Please try again."
+    });
+
+  }
+}
+
+  async processMessageForStudent({ message, student, sessionId }) {
+    const lower = message.toLowerCase().trim();
+
     // MENU NUMBER SELECTION
     const menuMap = {
       "1": "overall_attendance",
@@ -83,15 +115,12 @@ class ChatbotController {
 
       const response = await this.handleIntent(menuMap[lower], student, {});
 
-      return res.json({
-        success: true,
-        data: {
-          message: response.message,
-          intent: menuMap[lower],
-          action: response.action,
-          ...response.additionalData
-        }
-      });
+      return {
+        message: response.message,
+        intent: menuMap[lower],
+        action: response.action,
+        ...response.additionalData
+      };
 
     }
 
@@ -100,13 +129,10 @@ class ChatbotController {
 
       const response = this.getHelpMenu();
 
-      return res.json({
-        success: true,
-        data: {
-          message: response.message,
-          intent: "help"
-        }
-      });
+      return {
+        message: response.message,
+        intent: "help"
+      };
 
     }
 
@@ -175,27 +201,53 @@ class ChatbotController {
       true
     );
 
-    return res.json({
-      success: true,
-      data: {
-        message: finalResponse,
-        intent: intentResult.intent,
-        action: response.action,
-        ...response.additionalData
-      }
-    });
-
-  } catch (error) {
-
-    console.error("Error processing message:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Error processing your request. Please try again."
-    });
-
+    return {
+      message: finalResponse,
+      intent: intentResult.intent,
+      action: response.action,
+      ...response.additionalData
+    };
   }
-}
+
+  async getStudentFromPhoneNumber(phoneNumber) {
+    const normalizedInput = normalizePhoneNumber(phoneNumber);
+    if (!normalizedInput) {
+      return null;
+    }
+
+    const students = await Student.find({}).populate('courseId').lean(false);
+    const directStudent = students.find((student) => {
+      const studentPhone = normalizePhoneNumber(student.phone);
+      return studentPhone && (
+        studentPhone === normalizedInput ||
+        studentPhone.endsWith(normalizedInput) ||
+        normalizedInput.endsWith(studentPhone)
+      );
+    });
+
+    if (directStudent) {
+      return directStudent;
+    }
+
+    const parents = await Parent.find({}).lean();
+    const matchedParent = parents.find((parent) => {
+      const parentPhones = [parent.phone, parent.alternatePhone]
+        .map(normalizePhoneNumber)
+        .filter(Boolean);
+
+      return parentPhones.some((parentPhone) => (
+        parentPhone === normalizedInput ||
+        parentPhone.endsWith(normalizedInput) ||
+        normalizedInput.endsWith(parentPhone)
+      ));
+    });
+
+    if (!matchedParent) {
+      return null;
+    }
+
+    return Student.findOne({ parentId: matchedParent._id }).populate('courseId');
+  }
 
   // Get human-readable intent description
   getIntentDescription(intent) {
